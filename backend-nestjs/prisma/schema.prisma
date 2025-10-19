@@ -1,0 +1,408 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Management
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  emailVerified     Boolean  @default(false)
+  emailVerifiedAt   DateTime?
+  password          String?
+  firstName         String?
+  lastName          String?
+  displayName       String?
+  avatar            String?
+  phone             String?
+  phoneVerified     Boolean  @default(false)
+  dateOfBirth       DateTime?
+  
+  // Authentication
+  twoFactorEnabled  Boolean  @default(false)
+  twoFactorSecret   String?
+  backupCodes       String[]
+  lastLoginAt       DateTime?
+  loginCount        Int      @default(0)
+  
+  // Profile & Preferences
+  timezone          String   @default("UTC")
+  currency          String   @default("USD")
+  language          String   @default("en")
+  theme             String   @default("system")
+  
+  // Subscription & Billing (DISABLED - Not monetizing yet)
+  // subscriptionId    String?
+  // subscriptionStatus String? // active, canceled, past_due, etc.
+  subscriptionTier  String   @default("unlimited") // unlimited access for now
+  // trialEndsAt       DateTime?
+  
+  // KYC & Compliance
+  kycStatus         String   @default("pending") // pending, verified, rejected
+  kycDocuments      Json?
+  riskProfile       String?  // conservative, moderate, aggressive
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  deletedAt         DateTime?
+  
+  // Relations
+  accounts          Account[]
+  transactions      Transaction[]
+  budgets           Budget[]
+  goals             Goal[]
+  insights          Insight[]
+  notifications     Notification[]
+  sessions          Session[]
+  financialData     FinancialData?
+  financialGoals    FinancialGoal[]
+  budgetCategories  BudgetCategory[]
+  
+  @@map("users")
+}
+
+// OAuth Accounts
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+// User Sessions
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  deviceInfo   Json?
+  ipAddress    String?
+  userAgent    String?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+// Financial Accounts (Bank, Credit Card, Investment, etc.)
+model FinancialAccount {
+  id              String   @id @default(cuid())
+  userId          String
+  name            String
+  type            String   // checking, savings, credit_card, investment, loan
+  subtype         String?  // specific account subtype
+  institutionName String?
+  accountNumber   String?  // encrypted/masked
+  routingNumber   String?
+  balance         Decimal  @default(0)
+  availableBalance Decimal?
+  currency        String   @default("USD")
+  isActive        Boolean  @default(true)
+  
+  // External integration
+  plaidAccountId  String?
+  plaidItemId     String?
+  lastSyncAt      DateTime?
+  
+  // Metadata
+  color           String?
+  icon            String?
+  notes           String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  transactions    Transaction[]
+  
+  @@map("financial_accounts")
+}
+
+// Transactions
+model Transaction {
+  id                    String   @id @default(cuid())
+  userId                String
+  accountId             String?
+  
+  // Transaction details
+  amount                Decimal
+  currency              String   @default("USD")
+  description           String
+  date                  DateTime
+  
+  // Categorization
+  category              String?
+  subcategory           String?
+  tags                  String[]
+  
+  // Transaction type
+  type                  String   // income, expense, transfer
+  
+  // External data
+  plaidTransactionId    String?
+  merchantName          String?
+  merchantCategory      String?
+  
+  // Location
+  location              Json?
+  
+  // Reconciliation
+  isReconciled          Boolean  @default(false)
+  reconciledAt          DateTime?
+  
+  // AI/ML insights
+  confidence            Float?   // AI categorization confidence
+  isAnomaly             Boolean  @default(false)
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  
+  // Relations
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account               FinancialAccount? @relation(fields: [accountId], references: [id])
+  
+  @@map("transactions")
+}
+
+// Budgets
+model Budget {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  category    String
+  amount      Decimal
+  period      String   // monthly, yearly, weekly
+  startDate   DateTime
+  endDate     DateTime?
+  
+  // Progress tracking
+  spent       Decimal  @default(0)
+  remaining   Decimal  @default(0)
+  
+  // Settings
+  alertThreshold Float? // percentage threshold for alerts
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("budgets")
+}
+
+// Financial Goals
+model Goal {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  description   String?
+  type          String   // savings, debt_payoff, investment
+  targetAmount  Decimal
+  currentAmount Decimal  @default(0)
+  targetDate    DateTime?
+  
+  // Progress tracking
+  progress      Float    @default(0) // percentage
+  isCompleted   Boolean  @default(false)
+  completedAt   DateTime?
+  
+  // Settings
+  priority      String   @default("medium") // low, medium, high
+  isActive      Boolean  @default(true)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("goals")
+}
+
+// AI-Generated Insights
+model Insight {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String   // spending_pattern, budget_alert, goal_progress, etc.
+  title       String
+  description String
+  data        Json?    // structured insight data
+  priority    String   @default("medium") // low, medium, high
+  category    String?
+  
+  // Status
+  isRead      Boolean  @default(false)
+  isArchived  Boolean  @default(false)
+  
+  // AI metadata
+  confidence  Float?
+  model       String?
+  version     String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("insights")
+}
+
+// Notifications
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String   // email, push, in_app
+  title       String
+  message     String
+  data        Json?
+  
+  // Delivery
+  isRead      Boolean  @default(false)
+  readAt      DateTime?
+  isSent      Boolean  @default(false)
+  sentAt      DateTime?
+  
+  // Scheduling
+  scheduledFor DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("notifications")
+}
+
+// Subscription Plans (DISABLED - Not monetizing yet)
+// model SubscriptionPlan {
+//   id          String   @id @default(cuid())
+//   name        String   @unique
+//   description String?
+//   price       Decimal
+//   currency    String   @default("USD")
+//   interval    String   // month, year
+//   features    Json     // list of features
+//   isActive    Boolean  @default(true)
+//   
+//   // Stripe integration
+//   stripeProductId String?
+//   stripePriceId   String?
+//   
+//   createdAt   DateTime @default(now())
+//   updatedAt   DateTime @updatedAt
+//   
+//   @@map("subscription_plans")
+// }
+
+// Financial Data Summary
+model FinancialData {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  totalBalance    Decimal  @default(0)
+  monthlyIncome   Decimal  @default(0)
+  monthlyExpenses Decimal  @default(0)
+  savings         Decimal  @default(0)
+  debt            Decimal  @default(0)
+  investments     Decimal  @default(0)
+  creditScore     Int      @default(0)
+  portfolioValue  Decimal  @default(0)
+  monthlyGrowth   Decimal  @default(0)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("financial_data")
+}
+
+// Financial Goals (Enhanced)
+model FinancialGoal {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  description   String?
+  targetAmount  Decimal
+  currentAmount Decimal  @default(0)
+  targetDate    DateTime?
+  category      String?  // emergency_fund, vacation, house, etc.
+  
+  // Progress tracking
+  progress      Float    @default(0) // percentage
+  isCompleted   Boolean  @default(false)
+  completedAt   DateTime?
+  
+  // Settings
+  priority      String   @default("medium") // low, medium, high
+  isActive      Boolean  @default(true)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("financial_goals")
+}
+
+// Budget Categories (Enhanced)
+model BudgetCategory {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  category    String
+  limit       Decimal
+  spent       Decimal  @default(0)
+  period      String   @default("monthly") // monthly, yearly, weekly
+  
+  // Settings
+  alertThreshold Float? @default(80) // percentage threshold for alerts
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("budget_categories")
+}
+
+// System Configuration
+model SystemConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  category  String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("system_config")
+}
